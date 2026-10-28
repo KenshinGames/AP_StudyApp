@@ -23,10 +23,20 @@
   var PCARDS = window.POINT_CARDS || {};
   PFIELDS.forEach(function (f) { fieldById[f.id] = f; });
   PQ.forEach(function (q, i) { q.id = 1000 + i; });
+  var PASTQ = window.PAST_QUESTIONS || [];   // IPA 公開の過去問(past.js)。ID は 2000 番台
+  var PSETS = window.PAST_SETS || [];
+  PASTQ.forEach(function (q, i) { q.id = 2000 + i; });
   var qById = {};
   QS.forEach(function (q) { qById[q.id] = q; });
   PQ.forEach(function (q) { qById[q.id] = q; });
-  var ALLQ = QS.concat(PQ);
+  PASTQ.forEach(function (q) { qById[q.id] = q; });
+  var ALLQ = QS.concat(PQ).concat(PASTQ);
+  function pastOf(setId) { return PASTQ.filter(function (q) { return q.set === setId; }); }   // 年度セットの問題(元の問番号順)
+  var LESSONS = window.LESSONS || [];   // 学習講座(lessons.js)
+  var lessonById = {};
+  LESSONS.forEach(function (l) { lessonById[l.id] = l; });
+  function lessonsDone() { return load().lessons || {}; }
+  function lessonDoneCount() { return LESSONS.filter(function (l) { return lessonsDone()[l.id]; }).length; }
   var PLAIN = QS.filter(function (q) { return !q.jitsu; });   // 学科の問題(実技の事例は別枠)
   var CASES = window.CASES || [];
   function caseQs(cid) { return QS.filter(function (q) { return q.jitsu && q.cid === cid; }); }
@@ -278,6 +288,10 @@
     if (st.v === 'field' && fieldById[st.id] && FIELDS.some(function (f) { return f.id === st.id; })) { fieldMenu(st.id); return; }
     if (st.v === 'pcards') { pointCards(); return; }
     if (st.v === 'pcard' && PCARDS[st.id]) { pointCardView(st.id); return; }
+    if (st.v === 'lessons') { lessonList(); return; }
+    if (st.v === 'lesson' && lessonById[st.id]) { lessonView(st.id); return; }
+    if (st.v === 'past') { pastMenu(); return; }
+    if (st.v === 'guide') { guideView(); return; }
     if (st.v === 'cases') { caseMenu(); return; }
     if (st.v && st.v !== 'home') nav({ v: 'home', d: st.d || 0 }, true);
     home(homeY);
@@ -527,7 +541,7 @@
       t: run.title, m: run.mock ? 1 : 0, i: run.i, p: run.picks,
       ids: run.items.map(function (it) { return it.q.id; }),
       o: run.items.map(function (it) { return it.o || null; }),
-      e: run.endsAt || 0, l: run.limit || 0
+      e: run.endsAt || 0, l: run.limit || 0, ls: run.lessonId || ''
     };
     save();
   }
@@ -542,7 +556,7 @@
     if (!s) return false;
     run = {
       title: s.t, mock: !!s.m, i: Math.min(s.i || 0, s.ids.length - 1), picks: (s.p || []).slice(), ctxOpen: {},
-      limit: s.l || 0, endsAt: s.e || 0,
+      limit: s.l || 0, endsAt: s.e || 0, lessonId: s.ls || null,
       items: s.ids.map(function (id, k) { return prepare(qById[id], s.o && s.o[k]); })
     };
     return true;
@@ -596,6 +610,7 @@
     run = {
       title: opts.title,
       mock: !!opts.mock,
+      lessonId: opts.lesson || null,
       limit: opts.timed || 0,
       endsAt: opts.timed ? Date.now() + opts.timed * 1000 : 0,
       items: qs.map(function (q) { return prepare(q); }),
@@ -641,6 +656,7 @@
 
     var card = h('div', { class: 'card' });
     card.appendChild(cardTop(q, [h('span', { class: 'tag tf' }, [q.jitsu ? '実技' : q.tf ? '○×' : '4択'])]));
+    if (q.src) card.appendChild(h('div', { class: 'src' }, [q.src]));   // 過去問の出典ラベル(IPA の利用条件)
     // 事例文:その事例の 1 問目は開いておく。2 問目からはたたむ(開いたら、その事例の間は開いたまま)
     if (q.jitsu) card.appendChild(firstOfCase() ? ctxBox(q, true) : ctxBox(q, run.ctxOpen[q.cid], rememberCtx(q.cid)));
     card.appendChild(h('div', { class: 'qtext' }, [q.q]));
@@ -705,6 +721,7 @@
       h('span', { class: 'verdict ' + (ok ? 'ok' : 'ng') }, [ok ? '⭕ 正解!' : '❌ 不正解']), h('span', { class: 'grow' }), starButton(q)
     ]));
     if (q.jitsu) card.appendChild(ctxBox(q, run.ctxOpen[q.cid], rememberCtx(q.cid)));
+    if (q.src) card.appendChild(h('div', { class: 'src' }, [q.src]));
     card.appendChild(h('div', { class: 'qtext sm' }, [q.q]));
     card.appendChild(answerRows(it, picked));
     wrap.appendChild(card);
@@ -801,6 +818,17 @@
     var total = items.length;
     var rate = right / total;
 
+    // 学習講座の確認テスト:60% 以上でレッスン完了を保存する
+    var lessonNote = null;
+    if (run.lessonId && lessonById[run.lessonId]) {
+      if (rate >= PASS_RATE) {
+        var ls = load(); ls.lessons = ls.lessons || {}; ls.lessons[run.lessonId] = 1; save();
+        lessonNote = '🎓 レッスン完了!「' + lessonById[run.lessonId].title + '」をマスターしました';
+      } else {
+        lessonNote = 'レッスン完了まであと少し(60%以上で完了になります)。レッスンの解説を読み直して、もう一度挑戦しましょう';
+      }
+    }
+
     var wrap = h('div', { class: 'stack' });
     wrap.appendChild(h('div', { class: 'card score' }, [
       h('div', { class: 'sec', style: 'margin:0 0 6px' }, [run.title]),
@@ -808,6 +836,7 @@
       h('div', null, ['正答率 ' + pct(right, total) + '%']),
       h('div', { class: 'judge ' + (rate >= PASS_RATE ? 'pass' : 'fail') },
         [rate >= PASS_RATE ? '合格ライン(60%)クリア!' : 'あと ' + (Math.ceil(total * PASS_RATE) - right) + '問で合格ライン(60%)']),
+      lessonNote ? h('div', { class: 'lesson-note' }, [lessonNote]) : null,
       run.timeUp ? h('div', null, ['⏱ 制限時間になりました']) : null
     ]));
 
@@ -842,6 +871,7 @@
         var mine = x.pick == null ? '未回答' : x.it.labels[x.pick];
         rv.appendChild(h('div', { class: 'review' }, [
           h('div', { class: 'ctop' }, [h('span', { class: 'tag' }, [fieldById[q.f].short]), h('span', { class: 'grow' }), starButton(q)]),
+          q.src ? h('div', { class: 'src' }, [q.src]) : null,
           q.jitsu ? ctxBox(q, false) : null,
           h('div', { class: 'qtext' }, [q.q]),
           h('div', { class: 'ans' }, [h('span', { class: 'mine' }, ['あなたの答え:' + mine])]),
@@ -861,6 +891,7 @@
         okList.forEach(function (x) {
           ov.appendChild(h('div', { class: 'review' }, [
             h('div', { class: 'ctop' }, [h('span', { class: 'tag' }, [fieldById[x.it.q.f].short]), h('span', { class: 'grow' }), starButton(x.it.q)]),
+            x.it.q.src ? h('div', { class: 'src' }, [x.it.q.src]) : null,
             h('div', { class: 'qtext' }, [x.it.q.q]),
             h('div', { class: 'ans' }, [h('span', { class: 'right' }, ['⭕ ' + x.it.labels[x.it.correct]])]),
             h('details', { class: 'rv' }, [h('summary', null, ['解説を見る']), h('div', { class: 'exp' }, [h('p', null, [x.it.q.e]), askButton(x.it, x.pick)])])
@@ -876,7 +907,7 @@
         startRun({ title: '間違えた問題をやり直す', questions: miss.map(function (x) { return x.it.q; }) });
       } }, ['間違えた問題だけ、もう一度']) : null,
       h('button', { class: 'btn' + (miss.length ? '' : ' main'), onclick: function () {
-        startRun({ title: again.title, mock: again.mock, timed: again.limit || 0, questions: again.items.map(function (it) { return it.q; }) });
+        startRun({ title: again.title, mock: again.mock, timed: again.limit || 0, lesson: again.lessonId || null, questions: again.items.map(function (it) { return it.q; }) });
       } }, ['同じ問題をもう一度']),
       h('button', { class: 'btn', onclick: goHome }, ['ホームにもどる'])
     ]));
@@ -948,6 +979,18 @@
       bar(pct(tried, QS.length))
     ]));
 
+    wrap.appendChild(h('div', { class: 'sec' }, ['学ぶ(ゼロから一発合格)']));
+    var lm = h('div', { class: 'modes' });
+    lm.appendChild(mode('📚', '学習講座(全18レッスン)', '科目A 6分野×3レッスン。解説を読んでから確認テスト。完了 ' + lessonDoneCount() + ' / ' + LESSONS.length + ' レッスン', true, function () {
+      forward({ v: 'lessons' }); lessonList();
+    }));
+    lm.appendChild(mode('🧭', '学び方ガイド', '合格までの順序と月別目安。科目Aの足切り回避が最優先', false, function () {
+      forward({ v: 'guide' }); guideView();
+    }));
+    wrap.appendChild(lm);
+    wrap.appendChild(bar(pct(lessonDoneCount(), LESSONS.length || 1)));
+    wrap.appendChild(h('div', { class: 'hint' }, ['進め方:学習講座 → 分野ドリル → 過去問 → 本番形式の模試']));
+
     wrap.appendChild(h('div', { class: 'sec' }, ['問題を解く']));
     var modes = h('div', { class: 'modes' });
     modes.appendChild(mode('☀️', '今日の10問', '復習の期限が来た問題・まだ解いていない問題を優先して10問。1問ごとに解説', true, function () {
@@ -978,6 +1021,18 @@
       }, !stars.length));
     wrap.appendChild(modes);
 
+    wrap.appendChild(h('div', { class: 'sec' }, ['過去問に挑戦(IPA 公開問題)']));
+    var pm = h('div', { class: 'modes' });
+    pm.appendChild(mode('🏛', '過去問(令和7年度 春期・秋期)', 'IPA 公開の午前問題 ' + PASTQ.length + '問を収録。年度・分野を選んで演習', false, function () {
+      forward({ v: 'past' }); pastMenu();
+    }));
+    PSETS.forEach(function (set) {
+      var qs = pastOf(set.id);
+      pm.appendChild(mode('⏱', '本番形式:過去問 ' + set.short + '(' + qs.length + '問)', '本番そのままの並びで' + qs.length + '問。制限時間' + HONBAN_MINUTES + '分', false, function () {
+        begin({ title: '本番形式の模擬試験(過去問:' + set.label + ')', mock: true, timed: HONBAN_MINUTES * 60, questions: qs.slice() });
+      }));
+    });
+    wrap.appendChild(pm);
 
     wrap.appendChild(h('div', { class: 'sec' }, ['科目B 要点ドリル(記述の型を身につける)']));
     var bm = h('div', { class: 'modes' });
@@ -1026,16 +1081,152 @@
       standalone() ? null : h('div', { class: 'srow' }, [h('span', null, ['ホーム画面に追加']), h('button', { class: 'sbtn', onclick: installDialog }, ['やり方を見る'])]),
       h('div', { class: 'srow' }, [h('span', null, ['記録の引き継ぎ']), h('button', { class: 'sbtn', onclick: transferDialog }, ['コピー / 読み込み'])]),
       h('div', { class: 'srow' }, [h('button', { class: 'linkbtn', onclick: function () {
-        ask('学習の記録(解いた結果・途中の問題)をすべて消しますか?★と設定は残ります。', '消す', function () {
-          var s = load(); s.q = {}; delete s.run; save(); home(window.scrollY);
+        ask('学習の記録(解いた結果・途中の問題・レッスンの進捗)をすべて消しますか?★と設定は残ります。', '消す', function () {
+          var s = load(); s.q = {}; delete s.run; delete s.lessons; save(); home(window.scrollY);
         });
       } }, ['学習の記録を消す'])])
     ]));
 
     wrap.appendChild(h('div', { class: 'note' }, [
-      '※ 問題・解説はすべてこのアプリのオリジナルで、IPA の応用情報技術者試験の出題範囲(科目A:四肢択一80問、科目B:記述式・問1 情報セキュリティ必須+4問選択)を想定して作っています。合格基準は科目A・科目Bとも 100 点満点中 60 点以上で、一方でも 60 点に届かないと合格になりません。このアプリの模試は正答率 60% を合格ラインとして判定しています。科目Bは記述式のため、このアプリに科目Bの模試はありません。要点クイズと要点カードで要点と「答えの型」を身につけ、本物の記述演習は必ず過去問で、時間を計って行ってください。出題範囲や制度は変わることがあるため、受検前に IPA の公式情報で最新を確認してください。'
+      '※ ドリルの問題と全ての解説はこのアプリのオリジナルです。「過去問」は IPA が公開している令和7年度(春期・秋期)の応用情報技術者試験 午前問題で、出典は各問題に表示しています(図・表をテキストで正確に再現できない問題は収録していません)。IPA の応用情報技術者試験は、科目A:四肢択一80問、科目B:記述式・問1 情報セキュリティ必須+4問選択です。合格基準は科目A・科目Bとも 100 点満点中 60 点以上で、一方でも 60 点に届かないと合格になりません。このアプリの模試は正答率 60% を合格ラインとして判定しています。科目Bは記述式のため、このアプリに科目Bの模試はありません。要点クイズと要点カードで要点と「答えの型」を身につけ、本物の記述演習は必ず過去問で、時間を計って行ってください。出題範囲や制度は変わることがあるため、受検前に IPA の公式情報で最新を確認してください。'
     ]));
     mount(wrap, y);
+  }
+
+  /* ---------- 学習講座(学んでからテスト) ---------- */
+  // lessons.js の構造化テキストを画面にする:・=箇条書き、|=表、「公式:」=強調、URL はリンクにする
+  function richNodes(body) {
+    var out = [];
+    var lines = String(body || '').split('\n');
+    var tbl = null;
+    function flushTbl() { if (tbl) { out.push(tbl); tbl = null; } }
+    function para(text, cls) {
+      var m = text.match(/https?:\/\/[^\s]+/);
+      if (!m) return h('p', cls ? { class: cls } : null, [text]);
+      var a = h('a', { href: m[0], target: '_blank', rel: 'noopener' }, [m[0]]);
+      return h('p', cls ? { class: cls } : null, [text.slice(0, m.index), a, text.slice(m.index + m[0].length)]);
+    }
+    lines.forEach(function (ln) {
+      if (ln.indexOf('|') >= 0) {
+        var cells = ln.split('|');
+        if (!tbl) {
+          tbl = h('table', { class: 'ltbl' });
+          tbl.appendChild(h('tr', null, cells.map(function (c) { return h('th', null, [c]); })));
+        } else {
+          tbl.appendChild(h('tr', null, cells.map(function (c) { return h('td', null, [c]); })));
+        }
+        return;
+      }
+      flushTbl();
+      if (!ln) return;
+      if (ln.indexOf('公式:') === 0) out.push(h('div', { class: 'lformula' }, [ln]));
+      else if (ln.indexOf('・') === 0) out.push(h('div', { class: 'litem' }, [ln.slice(1)]));
+      else out.push(para(ln));
+    });
+    flushTbl();
+    return out;
+  }
+
+  function lessonList() {
+    setKeys(null);
+    screen = 'lessons';
+    var wrap = h('div', { class: 'stack' }, [h('div', { class: 'qhead' }, [h('button', { class: 'back', onclick: goBack }, ['← もどる'])])]);
+    wrap.appendChild(h('div', { class: 'hero', style: 'padding-top:0' }, [h('h1', { style: 'font-size:22px' }, ['📚 学習講座'])]));
+    wrap.appendChild(h('p', { class: 'sub' }, ['ゼロから学ぶための講座です。各レッスンは「解説を読む → 確認テスト(60%以上で完了)」の流れ。問題から入るのではなく、まずここで土台を作りましょう。']));
+    wrap.appendChild(h('div', { class: 'card stack' }, [
+      h('div', { class: 'stats' }, [h('div', { class: 'stat' }, [h('b', null, [lessonDoneCount() + ' / ' + LESSONS.length]), h('span', null, ['完了レッスン'])])]),
+      bar(pct(lessonDoneCount(), LESSONS.length || 1))
+    ]));
+    FIELDS.forEach(function (f) {
+      wrap.appendChild(h('div', { class: 'sec' }, [f.icon + ' ' + f.name]));
+      var list = h('div', { class: 'modes' });
+      LESSONS.filter(function (l) { return l.field === f.id; }).forEach(function (les, i) {
+        var done = !!lessonsDone()[les.id];
+        list.appendChild(mode('📖', (done ? '✓ ' : '') + 'レッスン' + (i + 1) + ':' + les.title,
+          '解説 ' + les.sections.length + ' 節 ・ 確認テスト ' + les.questionIds.length + '問' + (done ? ' ・ 完了' : ''), false, function () {
+            forward({ v: 'lesson', id: les.id }); lessonView(les.id);
+          }));
+      });
+      wrap.appendChild(list);
+    });
+    mount(wrap);
+  }
+
+  function lessonView(id) {
+    setKeys(null);
+    screen = 'lesson';
+    var les = lessonById[id];
+    var f = fieldById[les.field];
+    var done = !!lessonsDone()[id];
+    var wrap = h('div', { class: 'stack' }, [h('div', { class: 'qhead' }, [h('button', { class: 'back', onclick: goBack }, ['← もどる'])])]);
+    wrap.appendChild(h('div', { class: 'hero', style: 'padding-top:0' }, [
+      h('h1', { style: 'font-size:20px' }, [(f ? f.icon + ' ' + f.name + ':' : '') + les.title]),
+      h('p', null, [done ? '✓ このレッスンは完了しています。復習にどうぞ。' : '読み終えたら、最後の確認テストで「分かった」を確かめましょう。'])
+    ]));
+    les.sections.forEach(function (sec) {
+      var card = h('div', { class: 'card exp lesson-sec' }, [h('h3', null, [sec.h])]);
+      richNodes(sec.body).forEach(function (n) { card.appendChild(n); });
+      wrap.appendChild(card);
+    });
+    wrap.appendChild(h('button', { class: 'btn main wide', onclick: function () {
+      begin({ title: '確認テスト:' + les.title, lesson: les.id, questions: les.questionIds.map(function (qid) { return qById[qid]; }).filter(Boolean) });
+    } }, ['✍️ 確認テストを受ける(' + les.questionIds.length + '問)']));
+    wrap.appendChild(h('div', { class: 'hint' }, ['正答率 60% 以上でレッスン完了になります']));
+    mount(wrap);
+  }
+
+  /* ---------- 過去問(IPA 公開問題) ---------- */
+  function pastMenu() {
+    setKeys(null);
+    screen = 'past';
+    var wrap = h('div', { class: 'stack' }, [h('div', { class: 'qhead' }, [h('button', { class: 'back', onclick: goBack }, ['← もどる'])])]);
+    wrap.appendChild(h('div', { class: 'hero', style: 'padding-top:0' }, [h('h1', { style: 'font-size:22px' }, ['🏛 過去問'])]));
+    var ex = window.PAST_EXCLUDED || [];
+    wrap.appendChild(h('p', { class: 'sub' }, ['IPA が公開している応用情報技術者試験の午前問題です。出典は各問題に表示しています。解説はこのアプリのオリジナルです。図・表をテキストで正確に再現できない問題' + (ex.length ? '(' + ex.length + '問)' : '') + 'は収録していません。']));
+    PSETS.forEach(function (set) {
+      var qs = pastOf(set.id);
+      wrap.appendChild(h('div', { class: 'sec' }, [set.label + '(収録 ' + qs.length + '問)']));
+      var list = h('div', { class: 'modes' });
+      list.appendChild(mode('▶', '全問演習(' + qs.length + '問)', '本番の並び順で出題。1問ごとに解説', true, function () {
+        begin({ title: '過去問:' + set.label, questions: qs.slice() });
+      }));
+      list.appendChild(mode('⏱', '本番形式の模擬試験(' + qs.length + '問)', '本番そのままの並び・制限時間' + HONBAN_MINUTES + '分。判定は最後にまとめて', false, function () {
+        begin({ title: '本番形式の模擬試験(過去問:' + set.label + ')', mock: true, timed: HONBAN_MINUTES * 60, questions: qs.slice() });
+      }));
+      wrap.appendChild(list);
+      var fl = h('div', { class: 'modes' });
+      FIELDS.forEach(function (f) {
+        var fqs = qs.filter(function (q) { return q.f === f.id; });
+        if (!fqs.length) return;
+        var tried = 0, right = 0;
+        fqs.forEach(function (q) { var r = recOf(q); if (r) { tried++; if (r.last) right++; } });
+        fl.appendChild(h('button', { class: 'field', onclick: function () {
+          begin({ title: '過去問:' + set.label + ':' + f.name, questions: fqs.slice() });
+        } }, [
+          h('div', { class: 'top' }, [h('span', { class: 'ic' }, [f.icon]), h('b', null, [f.name]), h('small', null, [fqs.length + '問'])]),
+          bar(pct(right, fqs.length)),
+          h('div', { class: 'meta' }, [h('span', null, ['正解済み ' + right + ' / ' + fqs.length]), h('span', null, [tried ? '挑戦済み ' + tried + '問' : ''])])
+        ]));
+      });
+      wrap.appendChild(fl);
+    });
+    mount(wrap);
+  }
+
+  /* ---------- 学び方ガイド ---------- */
+  function guideView() {
+    setKeys(null);
+    screen = 'guide';
+    var wrap = h('div', { class: 'stack' }, [h('div', { class: 'qhead' }, [h('button', { class: 'back', onclick: goBack }, ['← もどる'])])]);
+    wrap.appendChild(h('div', { class: 'hero', style: 'padding-top:0' }, [h('h1', { style: 'font-size:22px' }, ['🧭 学び方ガイド'])]));
+    wrap.appendChild(h('p', { class: 'sub' }, ['ゼロ知識から一発合格を狙うための、このアプリの使い方と勉強の順序です。']));
+    (window.GUIDE_SECTIONS || []).forEach(function (sec) {
+      var card = h('div', { class: 'card exp lesson-sec' }, [h('h3', null, [sec.h])]);
+      richNodes(sec.body).forEach(function (n) { card.appendChild(n); });
+      wrap.appendChild(card);
+    });
+    wrap.appendChild(h('button', { class: 'btn main wide', onclick: function () { forward({ v: 'lessons' }); lessonList(); } }, ['📚 学習講座をはじめる']));
+    mount(wrap);
   }
 
   /* ---------- 科目B 要点カード ---------- */
@@ -1291,7 +1482,7 @@
   var CODE_HEAD = 'APREC1:';
   function exportCode() {
     var s = load();
-    var json = JSON.stringify({ q: s.q, star: s.star || {} });
+    var json = JSON.stringify({ q: s.q, star: s.star || {}, lessons: s.lessons || {} });
     return CODE_HEAD + btoa(unescape(encodeURIComponent(json)));
   }
   // 読み込んだ記録を今の記録に足す(同じ問題は、解いた回数の多いほう)。読み込めなければ -1、それ以外は更新した問題数
@@ -1308,6 +1499,8 @@
     });
     s.star = s.star || {};
     Object.keys(d.star || {}).forEach(function (id) { if (qById[id] && !s.star[id]) { s.star[id] = 1; n++; } });
+    s.lessons = s.lessons || {};
+    Object.keys(d.lessons || {}).forEach(function (id) { if (lessonById[id] && !s.lessons[id]) { s.lessons[id] = 1; n++; } });
     save();
     return n;
   }

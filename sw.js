@@ -1,9 +1,9 @@
 /* 電波がなくても開けるように、アプリのファイルを端末に保存しておく(Service Worker)。
    ネットにつながるときは毎回新しいファイルを取りに行き(更新がすぐ届く)、届かないときだけ保存した分を使う。
    ファイルを足したら FILES にも足す。AI に質問(Worker)など、ほかのサイトへの通信には関わらない */
-var CACHE = 'ap-v1';
+var CACHE = 'ap-v2';
 var FILES = [
-  './', 'index.html', 'style.css', 'app.js', 'questions.js', 'points.js', 'cases.js', 'config.js',
+  './', 'index.html', 'style.css', 'app.js', 'questions.js', 'points.js', 'past.js', 'lessons.js', 'cases.js', 'config.js',
   'manifest.webmanifest', 'icons/icon.svg'
 ];
 var TIMEOUT_MS = 4000;   // 電波が弱いとき、これだけ待っても届かなければ保存した分を出す

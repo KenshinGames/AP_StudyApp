@@ -344,3 +344,18 @@ button { touch-action: manipulation; }
 .pcpattern, .pcskel { margin: 0; line-height: 1.7; }
 .pckeys { display: flex; flex-wrap: wrap; gap: 6px; }
 .pckey { font-size: 13px; background: var(--brand-soft); color: var(--brand); border-radius: 999px; padding: 3px 10px; font-weight: 600; }
+
+/* ===== v2:過去問の出典ラベル・学習講座・ガイド ===== */
+.src { font-size: 12px; color: var(--sub); margin-top: 8px; }
+.review .src { margin: 2px 0 6px; }
+.lesson-note { margin-top: 10px; font-weight: 700; color: var(--brand); }
+.lesson-sec p { line-height: 1.8; margin: 0 0 10px; }
+.lesson-sec p:last-child, .lesson-sec .litem:last-child { margin-bottom: 0; }
+.lesson-sec h3 { font-size: 15px; margin-bottom: 10px; }
+.litem { line-height: 1.8; margin: 0 0 6px; padding-left: 1.1em; text-indent: -1.1em; }
+.litem::before { content: "・"; color: var(--brand); font-weight: 700; }
+.lformula { background: var(--brand-soft); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; line-height: 1.7; font-weight: 600; }
+.ltbl { width: 100%; border-collapse: collapse; margin: 0 0 12px; font-size: calc(13px * var(--fs)); line-height: 1.6; }
+.ltbl th, .ltbl td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.ltbl th { background: var(--brand-soft); color: var(--brand); font-weight: 700; white-space: nowrap; }
+.lesson-sec a { color: var(--brand); word-break: break-all; }
